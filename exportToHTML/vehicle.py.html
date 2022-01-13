@@ -1,0 +1,304 @@
+<html>
+<head>
+<title>vehicle.py</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #cc7832;}
+.s1 { color: #a9b7c6;}
+.s2 { color: #808080;}
+.s3 { color: #6897bb;}
+.s4 { color: #6a8759;}
+</style>
+</head>
+<body bgcolor="#2b2b2b">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+vehicle.py</font>
+</center></td></tr></table>
+<pre><span class="s0">from </span><span class="s1">gpiozero </span><span class="s0">import </span><span class="s1">Robot</span><span class="s0">, </span><span class="s1">Motor</span>
+<span class="s0">from </span><span class="s1">math </span><span class="s0">import </span><span class="s1">cos</span><span class="s0">, </span><span class="s1">sin</span><span class="s0">, </span><span class="s1">pi</span><span class="s0">, </span><span class="s1">atan2</span>
+<span class="s0">import </span><span class="s1">pygame</span>
+<span class="s0">import </span><span class="s1">time</span>
+
+
+<span class="s0">class </span><span class="s1">Point():</span>
+    <span class="s0">def </span><span class="s1">__init__(self</span><span class="s0">, </span><span class="s1">x</span><span class="s0">, </span><span class="s1">y):</span>
+        <span class="s1">self.x = x</span>
+        <span class="s1">self.y = y</span>
+
+
+<span class="s0">class </span><span class="s1">car():</span>
+    <span class="s2"># Pins where motors are connected at</span>
+    <span class="s2"># (see Motor controller schaltplan for more)</span>
+    <span class="s1">RightMotor = Motor(</span><span class="s3">24</span><span class="s0">, </span><span class="s3">4</span><span class="s0">, </span><span class="s3">19</span><span class="s1">)</span>
+    <span class="s1">LeftMotor = Motor(</span><span class="s3">22</span><span class="s0">, </span><span class="s3">17</span><span class="s0">, </span><span class="s3">18</span><span class="s1">)</span>
+
+    <span class="s2"># DC Motor values</span>
+    <span class="s1">MotorMax = </span><span class="s3">1  </span><span class="s2"># Full speed</span>
+    <span class="s1">MotorMin = </span><span class="s3">0  </span><span class="s2"># No speed</span>
+    <span class="s1">MotorSpeedInitial = </span><span class="s3">0.35</span>
+    <span class="s1">MotorSpeedHardTurn = </span><span class="s3">0.3  </span><span class="s2"># Speed if we want a 90 degree turn</span>
+    <span class="s1">FactorOffsetLeft = </span><span class="s3">1  </span><span class="s2"># offset Faktor for the speed</span>
+    <span class="s1">FactorOffsetRight = </span><span class="s3">1.16  </span><span class="s2"># offset Faktor for the speed</span>
+
+    <span class="s2"># Constant values:</span>
+    <span class="s1">AngleSensorRight1 = </span><span class="s3">270</span>
+    <span class="s1">AngleSensorRight2 = </span><span class="s3">225</span>
+    <span class="s1">DistanceWallRight = </span><span class="s3">350</span>
+    <span class="s1">WallLead = </span><span class="s3">1800  </span><span class="s2"># parameter for sensitivity of the wall following</span>
+    <span class="s1">DistanceWallFront = </span><span class="s3">400</span>
+    <span class="s1">DistanceNoWallDetected = </span><span class="s3">1000  </span><span class="s2"># if distance to wall right is higher than this value we go straight till we find a wall</span>
+    <span class="s1">AngleFront1 = </span><span class="s3">160</span>
+    <span class="s1">AngleFront2 = </span><span class="s3">200</span>
+    <span class="s1">MaxDeviation = </span><span class="s3">0.19</span>
+
+    <span class="s1">AngleBack = </span><span class="s3">330  </span><span class="s2"># if an obstacle was just passed but  the right sensor sees no obstacle we turn right</span>
+    <span class="s1">DistanceObstacleBack = </span><span class="s3">400</span>
+
+    <span class="s1">running = </span><span class="s0">False</span>
+
+    <span class="s0">def </span><span class="s1">__init__(self):</span>
+        <span class="s2"># pygame initialization</span>
+        <span class="s1">pygame.init()</span>
+        <span class="s2"># pygame display mode</span>
+        <span class="s1">screen = pygame.display.set_mode((</span><span class="s3">100</span><span class="s0">, </span><span class="s3">100</span><span class="s1">))</span>
+
+    <span class="s0">def </span><span class="s1">run(self</span><span class="s0">, </span><span class="s1">data):</span>
+
+        <span class="s1">pause = </span><span class="s0">True</span>
+        <span class="s1">brake = </span><span class="s0">False</span>
+        <span class="s1">DrivingMode = </span><span class="s3">9</span>
+        <span class="s1">msact = </span><span class="s3">0</span>
+        <span class="s1">msprev = </span><span class="s3">0</span>
+        <span class="s1">ObstacleSmallOld = ObstacleSmall = </span><span class="s3">0</span>
+
+        <span class="s1">self.running = </span><span class="s0">True</span>
+
+        <span class="s2"># used to start and stop the robot;</span>
+        <span class="s2"># KEY p, b, ESC</span>
+        <span class="s1">CommandValues = {</span><span class="s4">'Pause'</span><span class="s1">: </span><span class="s3">1</span><span class="s0">,</span>
+                         <span class="s4">'Brake'</span><span class="s1">: </span><span class="s3">0</span>
+                         <span class="s1">}</span>
+
+        <span class="s1">print(</span><span class="s4">&quot;Car ready: Press ESC to Quit / p to start or pause / b to break&quot;</span><span class="s1">)</span>
+
+        <span class="s0">while </span><span class="s1">self.running:</span>
+
+            <span class="s0">for </span><span class="s1">event </span><span class="s0">in </span><span class="s1">pygame.event.get():</span>
+                <span class="s2"># if key down is pressed</span>
+                <span class="s0">if </span><span class="s1">event.type == pygame.KEYDOWN:</span>
+                    <span class="s0">if </span><span class="s1">event.key == pygame.K_b:</span>
+                        <span class="s1">CommandValues[</span><span class="s4">'Brake'</span><span class="s1">] = </span><span class="s3">1</span>
+
+                    <span class="s0">if </span><span class="s1">event.key == pygame.K_p:</span>
+                        <span class="s1">CommandValues[</span><span class="s4">'Pause'</span><span class="s1">] = </span><span class="s0">not </span><span class="s1">CommandValues[</span><span class="s4">'Pause'</span><span class="s1">]</span>
+
+                    <span class="s0">if </span><span class="s1">event.key == pygame.K_ESCAPE:</span>
+                        <span class="s2"># press esc to exit</span>
+                        <span class="s1">print(</span><span class="s4">&quot;Car: EXIT&quot;</span><span class="s1">)</span>
+                        <span class="s1">self.running = </span><span class="s0">False</span>
+
+                <span class="s0">if </span><span class="s1">event.type == pygame.KEYUP:</span>
+                    <span class="s0">if </span><span class="s1">event.key == pygame.K_b:</span>
+                        <span class="s1">CommandValues[</span><span class="s4">'Brake'</span><span class="s1">] = </span><span class="s3">0</span>
+
+            <span class="s1">pause = CommandValues[</span><span class="s4">'Pause'</span><span class="s1">]</span>
+            <span class="s1">brake = CommandValues[</span><span class="s4">'Brake'</span><span class="s1">]</span>
+
+            <span class="s0">if not </span><span class="s1">(pause </span><span class="s0">or </span><span class="s1">brake):</span>
+                <span class="s2"># normal driving mode</span>
+
+                <span class="s2"># if obstacle in front car -&gt; mode 2: Left Turn</span>
+                <span class="s0">if </span><span class="s1">self.obstacle(data</span><span class="s0">, </span><span class="s1">self.AngleFront1</span><span class="s0">, </span><span class="s1">self.AngleFront2</span><span class="s0">, </span><span class="s1">self.DistanceWallFront):</span>
+                    <span class="s1">DrivingMode = </span><span class="s3">2</span>
+                    <span class="s1">angle = </span><span class="s3">0</span>
+
+                    <span class="s2"># if in a smaller range no obstacle is detected we make a short brake. otherwise the left turn is too strong</span>
+                    <span class="s1">ObstacleSmall = self.obstacle(data</span><span class="s0">, </span><span class="s1">self.AngleFront1</span><span class="s0">, </span><span class="s3">180</span><span class="s0">, </span><span class="s1">self.DistanceWallFront)</span>
+                    <span class="s0">if not </span><span class="s1">ObstacleSmall </span><span class="s0">and </span><span class="s1">ObstacleSmallOld:  </span><span class="s2"># negative flag</span>
+                        <span class="s1">msprev = time.time_ns() / </span><span class="s3">1000000</span>
+                    <span class="s1">msact = time.time_ns() / </span><span class="s3">1000000</span>
+                    <span class="s0">if </span><span class="s1">msact &gt; msprev + </span><span class="s3">100</span><span class="s1">:</span>
+                        <span class="s1">DrivingMode = </span><span class="s3">2</span>
+                    <span class="s0">else</span><span class="s1">:</span>
+                        <span class="s1">DrivingMode = </span><span class="s3">5</span>
+                    <span class="s1">ObstacleSmallOld = ObstacleSmall</span>
+
+                <span class="s2"># if obstacle soon then do a small left turn</span>
+                <span class="s0">elif </span><span class="s1">self.obstacle(data</span><span class="s0">, </span><span class="s1">self.AngleFront1</span><span class="s0">, </span><span class="s1">self.AngleFront2</span><span class="s0">, </span><span class="s1">self.DistanceWallFront + </span><span class="s3">250</span><span class="s1">):</span>
+                    <span class="s1">DrivingMode = </span><span class="s3">6</span>
+                    <span class="s1">angle = </span><span class="s3">0</span>
+
+                    <span class="s2"># if no wall detected at the right sensor we go either straight till we find a wall or turn right for the case we just passed an obstacle</span>
+                <span class="s0">elif not </span><span class="s1">\</span>
+                <span class="s1">(self.obstacle(data</span><span class="s0">, </span><span class="s1">self.AngleSensorRight1</span><span class="s0">, </span><span class="s1">self.AngleSensorRight1</span><span class="s0">, </span><span class="s1">self.DistanceNoWallDetected)):</span>
+                    <span class="s0">if </span><span class="s1">self.obstacle(data</span><span class="s0">, </span><span class="s1">self.AngleSensorRight1</span><span class="s0">, </span><span class="s1">self.AngleBack</span><span class="s0">, </span><span class="s1">self.DistanceObstacleBack):</span>
+                        <span class="s1">DrivingMode = </span><span class="s3">4</span>
+                        <span class="s1">angle = </span><span class="s3">0</span>
+                    <span class="s0">else</span><span class="s1">:</span>
+                        <span class="s1">DrivingMode = </span><span class="s3">3</span>
+                        <span class="s1">angle = </span><span class="s3">0</span>
+
+                <span class="s0">else</span><span class="s1">:</span>
+                    <span class="s1">angle = self.getdeviation(data)</span>
+                    <span class="s1">DrivingMode = </span><span class="s3">1</span>
+
+                <span class="s1">self.drivingmode(DrivingMode</span><span class="s0">, </span><span class="s1">angle)</span>
+
+            <span class="s0">else</span><span class="s1">:</span>
+                <span class="s2"># manual pause or brake -&gt; do nothing</span>
+                <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorMin)</span>
+
+        <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorMin)  </span><span class="s2"># stop car when not running</span>
+
+    <span class="s0">def </span><span class="s1">stop(self):</span>
+        <span class="s1">self.running = </span><span class="s0">False</span>
+        <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorMin)</span>
+        <span class="s1">pygame.quit()</span>
+
+        <span class="s1">print(</span><span class="s4">&quot;Car stopped&quot;</span><span class="s1">)</span>
+
+    <span class="s0">def </span><span class="s1">setspeed(self</span><span class="s0">, </span><span class="s1">left</span><span class="s0">, </span><span class="s1">right):</span>
+        <span class="s2"># sets speed to the value on parameter for right and left wheel</span>
+
+        <span class="s2"># offset wheels</span>
+        <span class="s1">left = left * self.FactorOffsetLeft</span>
+        <span class="s1">right = right * self.FactorOffsetRight</span>
+
+        <span class="s2"># negative value means backwards</span>
+        <span class="s1">LeftForward = </span><span class="s0">True</span>
+        <span class="s1">RightForward = </span><span class="s0">True</span>
+        <span class="s0">if </span><span class="s1">left &lt; </span><span class="s3">0</span><span class="s1">:</span>
+            <span class="s1">LeftForward = </span><span class="s0">False</span>
+            <span class="s1">left = left * -</span><span class="s3">1</span>
+        <span class="s0">if </span><span class="s1">right &lt; </span><span class="s3">0</span><span class="s1">:</span>
+            <span class="s1">RightForward = </span><span class="s0">False</span>
+            <span class="s1">right = right * -</span><span class="s3">1</span>
+
+        <span class="s2"># limit the speed</span>
+        <span class="s0">if </span><span class="s1">left &lt;= self.MotorMin:</span>
+            <span class="s1">left = self.MotorMin</span>
+
+        <span class="s0">if </span><span class="s1">right &lt;= self.MotorMin:</span>
+            <span class="s1">right = self.MotorMin</span>
+
+        <span class="s0">if </span><span class="s1">left &gt;= self.MotorMax:</span>
+            <span class="s1">left = self.MotorMax</span>
+
+        <span class="s0">if </span><span class="s1">right &gt;= self.MotorMax:</span>
+            <span class="s1">right = self.MotorMax</span>
+
+        <span class="s2"># write spped to motor</span>
+        <span class="s0">if </span><span class="s1">LeftForward:</span>
+            <span class="s1">self.LeftMotor.forward(speed=left)</span>
+        <span class="s0">else</span><span class="s1">:</span>
+            <span class="s1">self.LeftMotor.backward(speed=left)</span>
+
+        <span class="s0">if </span><span class="s1">RightForward:</span>
+            <span class="s1">self.RightMotor.forward(speed=right)</span>
+        <span class="s0">else</span><span class="s1">:</span>
+            <span class="s1">self.LeftMotor.backward(speed=right)</span>
+
+    <span class="s0">def </span><span class="s1">getdeviation(self</span><span class="s0">, </span><span class="s1">data):</span>
+        <span class="s2"># get deviation angle in rad</span>
+
+        <span class="s2"># prepare sensor data</span>
+        <span class="s1">Sensor1 = Point(</span><span class="s3">0</span><span class="s0">, </span><span class="s3">0</span><span class="s1">)</span>
+        <span class="s1">Sensor2 = Point(</span><span class="s3">0</span><span class="s0">, </span><span class="s3">0</span><span class="s1">)</span>
+        <span class="s2"># Sensor 1</span>
+        <span class="s1">angleRad = (self.AngleSensorRight1 - </span><span class="s3">180</span><span class="s1">) * pi / </span><span class="s3">180.0</span>
+        <span class="s1">Sensor1.x = data[self.AngleSensorRight1] * cos(angleRad)</span>
+        <span class="s1">Sensor1.y = data[self.AngleSensorRight1] * sin(angleRad)</span>
+        <span class="s2"># Sensor 2:</span>
+        <span class="s1">angleRad = (self.AngleSensorRight1 - self.AngleSensorRight2) * pi / </span><span class="s3">180.0</span>
+        <span class="s1">Sensor2.x = data[self.AngleSensorRight2] * cos(angleRad)</span>
+        <span class="s1">Sensor2.y = data[self.AngleSensorRight2] * sin(angleRad)</span>
+
+        <span class="s1">deviation = atan2((Sensor2.y - self.DistanceWallRight)</span><span class="s0">, </span><span class="s1">(Sensor2.x + self.WallLead - Sensor1.y))</span>
+
+        <span class="s2"># limit deviation because otherwise the speed will go too fast in critical situation</span>
+        <span class="s0">if </span><span class="s1">deviation &gt; self.MaxDeviation:</span>
+            <span class="s1">deviation = self.MaxDeviation</span>
+
+        <span class="s0">if </span><span class="s1">deviation &lt; (-</span><span class="s3">1 </span><span class="s1">* self.MaxDeviation):</span>
+            <span class="s1">deviation = (-</span><span class="s3">1 </span><span class="s1">* self.MaxDeviation)</span>
+
+        <span class="s0">return </span><span class="s1">deviation</span>
+
+    <span class="s0">def </span><span class="s1">drivingmode(self</span><span class="s0">, </span><span class="s1">mode</span><span class="s0">, </span><span class="s1">angle):</span>
+        <span class="s2"># mode:</span>
+        <span class="s2"># 1= follow wall</span>
+        <span class="s2"># 2= turn left when wall in front</span>
+        <span class="s2"># 3= drive forward when uncommon start position</span>
+        <span class="s2"># 4= turn right when obstacle just passed</span>
+        <span class="s2"># 5= pause -&gt; wait for new data</span>
+        <span class="s2"># 6= turn left smooth, when obstacle comes soon</span>
+        <span class="s2"># 9= trouble situation -&gt; stop</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">1</span><span class="s1">:</span>
+            <span class="s1">SpeedLeft = self.MotorSpeedInitial + (sin(</span><span class="s3">2 </span><span class="s1">* angle) * self.MotorSpeedInitial)</span>
+            <span class="s1">SpeedRight = self.MotorSpeedInitial - (sin(</span><span class="s3">2 </span><span class="s1">* angle) * self.MotorSpeedInitial)</span>
+
+            <span class="s1">self.setspeed(SpeedLeft</span><span class="s0">, </span><span class="s1">SpeedRight)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">2</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorSpeedHardTurn)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">3</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorSpeedInitial</span><span class="s0">, </span><span class="s1">self.MotorSpeedInitial)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">4</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorSpeedHardTurn</span><span class="s0">, </span><span class="s1">self.MotorMin)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">5</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorMin)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">6</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorSpeedHardTurn / </span><span class="s3">2</span><span class="s0">, </span><span class="s1">self.MotorSpeedHardTurn)</span>
+
+        <span class="s0">if </span><span class="s1">mode == </span><span class="s3">9</span><span class="s1">:</span>
+            <span class="s1">self.setspeed(self.MotorMin</span><span class="s0">, </span><span class="s1">self.MotorMin)</span>
+
+    <span class="s0">def </span><span class="s1">obstacle(self</span><span class="s0">, </span><span class="s1">data</span><span class="s0">, </span><span class="s1">Angle1</span><span class="s0">, </span><span class="s1">Angle2</span><span class="s0">, </span><span class="s1">distance):</span>
+        <span class="s2"># returns true when measured distance is smaller than distance</span>
+        <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(Angle1</span><span class="s0">, </span><span class="s1">Angle2 + </span><span class="s3">1</span><span class="s1">):</span>
+            <span class="s0">if </span><span class="s1">data[i] &gt; </span><span class="s3">0 </span><span class="s0">and </span><span class="s1">data[i] &lt;= distance </span><span class="s0">and </span><span class="s1">(Angle1 != </span><span class="s3">0 </span><span class="s0">or </span><span class="s1">Angle2 != </span><span class="s3">0</span><span class="s1">):</span>
+                <span class="s2"># print(&quot;obstacle detected at Angle &quot;, i, &quot;Distance: &quot;, data[i])</span>
+                <span class="s0">return True</span>
+        <span class="s0">return False</span>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+</body>
+</html>
