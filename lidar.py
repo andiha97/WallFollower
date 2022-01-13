@@ -33,8 +33,3 @@ class scanner(threading.Thread):
                 lidar.disconnect()
                 break
 
-
-
-
-
-

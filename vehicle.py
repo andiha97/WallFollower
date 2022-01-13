@@ -101,7 +101,7 @@ class car():
                     ObstacleSmallOld = ObstacleSmall
 
                 # if obstacle soon then do a small left turn
-                elif self.obstacle(data, self.AngleFront1, self.AngleFront2, self.DistanceWallFront + 250):
+                elif self.obstacle(data, self.AngleFront1 +5, self.AngleFront2 -5, self.DistanceWallFront + 250):
                     DrivingMode = 6
                     angle = 0
 
@@ -247,33 +247,4 @@ class Point():
     def __init__(self, x, y):
         self.x = x
         self.y = y
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

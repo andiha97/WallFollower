@@ -13,4 +13,3 @@ except KeyboardInterrupt:
 finally:
     scanner.stop()
     car.stop()
-
